@@ -71,7 +71,8 @@ Source `runs/motion_gen/env/character.sh`: it sets `ROBOSKILLS_PYTHON` (this rep
     below, `human_root_name` the Hips bone, `human_height_assumption=1.0`, and `frames[t, k]` the position and the
     turn (wxyz) of bone `solver.human_joint_names[k]`. The `target` task's `position_weight` and
     `orientation_weight` per bone (full names): Hips (30, 2), Spine2 (0.7, 0.7), each UpLeg (1.5, 1), Foot (30, 2),
-    ToeBase (30, 1), Arm (1.5, 1), Hand (2, 1.2).
+    ToeBase (30, 1), Arm (1.5, 1), Hand (2, 1.2); Spine, Spine1, Neck, Head and each Shoulder, ForeArm and Leg
+    (0, 0.5), their turns alone: without a target a bone stays where it falls (a head 70 degrees off the person's).
   - The `rest` task, once weighted, pulls toward the middle of each range, which bends the knees: set its
     `rest_q_arg` to None (the robot's zero pose, the T-pose) and its `weight` to 0.05 (setting `rest_q` is ignored).
 - A Mixamo rest hand's fingers lie parallel and its thumb runs along the index; a person's (SMPL-X's, MANO's) fan
@@ -80,7 +81,9 @@ Source `runs/motion_gen/env/character.sh`: it sets `ROBOSKILLS_PYTHON` (this rep
   Mixamo `LeftHandIndex1`-`3`.
 
 `retarget.retarget_motion(motion, character, out)` runs these targets on GVHMR's `smplx.npz` into
-`out/motion.npz`, the renderer's MOTION; `check_motion` reports how far the limbs strayed. The first of a clip's solves
+`out/motion.npz`, the renderer's MOTION, with the feet the person plants held where they land (`feet`: the floor
+levelled under the person, a sole down where it is near the floor and barely moves in the picture); `check_motion`
+reports how far the limbs strayed. The first of a clip's solves
 starts from the T-pose: solved once, the arms end short of it, so solve the first frame a few times first. RoboKit's
 first solve failed with `may need newer version of nvJitLink library` on driver 580.178.04 (Warp 1.18.0) and worked on
 580.82.07.

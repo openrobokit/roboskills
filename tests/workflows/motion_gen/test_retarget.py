@@ -39,7 +39,8 @@ def test_weights_cover_a_bones_both_sides_by_full_name():
     c.roles.update(RightFoot="m:RightFoot", Spine2="m:Spine2", **{f"{s}{r}": f"m:{s}{r}" for s in ("Left", "Right") for r in ("UpLeg", "ToeBase", "Arm", "Hand")})  # fmt: skip
     found = weights(c)
     assert found["m:Hips"] == (30, 2) and found["m:LeftFoot"] == found["m:RightFoot"] == (30, 2)
-    assert len(found) == 12
+    assert found["m:Spine"] == (0, 0.5) and "m:Head" not in found  # a role the character lacks is skipped
+    assert len(found) == 13
 
 
 def test_camera_side_is_where_the_camera_stands_from_the_person(tmp_path):
