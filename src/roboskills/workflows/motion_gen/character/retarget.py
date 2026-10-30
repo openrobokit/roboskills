@@ -1,7 +1,8 @@
 """GVHMR's motion on a Mixamo character through RoboKit's humanoid retargeting, the recipe in SKILL.md.
 
 `retarget_motion(motion, character, out)`: each bone turns as its SMPL-X joint, down the character's own proportions;
-RoboKit fits the character's joint ranges to those targets frame by frame. `check_motion` measures the result.
+RoboKit fits the character's joint ranges to those targets frame by frame, the feet the person plants held where
+they land (`feet`). `check_motion` measures the result.
 """
 
 from pathlib import Path
@@ -9,22 +10,27 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from roboskills.workflows.motion_gen.character import contact
+from roboskills.workflows.motion_gen.character import contact, feet
 from roboskills.workflows.motion_gen.character.character import Character, load_character, positions, skinned
 from roboskills.workflows.motion_gen.character.robot import SMPLX, robot, turns
 
 
 Y_TO_Z = Rotation.from_euler("x", 90, degrees=True).as_matrix()  # SMPL-X's y-up T-pose onto a Mixamo rest
-WEIGHTS = {"Hips": (30, 2), "Spine2": (0.7, 0.7), "UpLeg": (1.5, 1), "Foot": (30, 2), "ToeBase": (30, 1),
-           "Arm": (1.5, 1), "Hand": (2, 1.2)}  # role, its side's if it has one -> position, orientation  # fmt: skip
+TURN = (0, 0.5)  # a bone followed by its turn alone: its place comes from the bones above it
+WEIGHTS = {"Hips": (30, 2), "Spine": TURN, "Spine1": TURN, "Spine2": (0.7, 0.7), "Neck": TURN, "Head": TURN,
+           "Shoulder": TURN, "Arm": (1.5, 1), "ForeArm": TURN, "Hand": (2, 1.2), "UpLeg": (1.5, 1), "Leg": TURN,
+           "Foot": (30, 2), "ToeBase": (30, 1)}  # role, its side's if it has one -> position, orientation  # fmt: skip
 SETTLE = 8  # solves of the first frame before the clip: one, from the T-pose, leaves the arms short of it
 LIMB = 0.1  # metres a foot or hand may stray from its target
 
 
-def person(motion: Path, out: Path) -> tuple[np.ndarray, np.ndarray, float, float]:
-    """From GVHMR's `motion`: the joints' world turns [T, 55, 3, 3] and the pelvis [T, 3], both z-up, the person's
-    standing pelvis height and the fps. Writes out/amass.npz and out/rest.npz, the files RoboKit's loader reads."""
+def person(motion: Path, out: Path) -> tuple[np.ndarray, np.ndarray, float, float, np.ndarray, np.ndarray]:
+    """From GVHMR's `motion`: the joints' world turns [T, 55, 3, 3] and the pelvis [T, 3], both z-up over the floor
+    under the person (`feet.level`), the person's standing pelvis height, the fps, and the sole joints
+    (`feet.SOLE_JOINTS`) [T, 4, 3] in that world and in the camera. Writes out/amass.npz, out/camera.npz and
+    out/rest.npz, the files RoboKit's loader reads."""
     from robokit.helpers.humanoid_retargeting.loaders.smplx import load_smplx_file
+    from robokit.smplx import SMPLX_JOINT_NAMES
 
     d = np.load(motion)
     fps, betas = float(d["fps"]), d["world_betas"].mean(0)
@@ -32,11 +38,17 @@ def person(motion: Path, out: Path) -> tuple[np.ndarray, np.ndarray, float, floa
              trans=d["world_transl"], betas=betas, mocap_frame_rate=fps)  # fmt: skip
     np.savez(out / "rest.npz", root_orient=np.zeros((1, 3)), pose_body=np.zeros((1, 63)), trans=np.zeros((1, 3)),
              betas=betas, mocap_frame_rate=fps)  # fmt: skip
-    poses = load_smplx_file(str(out / "amass.npz"), compute_vertices=False).T_world_joint_xyz_wxyz
-    rest = load_smplx_file(str(out / "rest.npz"))
+    np.savez(out / "camera.npz", root_orient=d["camera_global_orient"], pose_body=d["camera_body_pose"],
+             trans=d["camera_transl"], betas=betas, mocap_frame_rate=fps)  # fmt: skip
+    clip = load_smplx_file(str(out / "amass.npz"))
+    poses, rest = clip.T_world_joint_xyz_wxyz, load_smplx_file(str(out / "rest.npz"))
     world = Rotation.from_quat(poses[..., [4, 5, 6, 3]].reshape(-1, 4)).as_matrix().reshape(*poses.shape[:2], 3, 3)
     standing = float(rest.joints[0, 0, 1] - rest.vertices[0, :, 1].min())
-    return Y_TO_Z @ world @ Y_TO_Z.T, poses[:, 0, :3] @ Y_TO_Z.T, standing, fps
+    joints = poses[..., :3] @ Y_TO_Z.T
+    joints[..., 2] -= feet.level(clip.vertices @ Y_TO_Z.T, fps)[:, None]
+    soles = [list(SMPLX_JOINT_NAMES).index(j) for j in feet.SOLE_JOINTS]
+    seen = load_smplx_file(str(out / "camera.npz"), compute_vertices=False).T_world_joint_xyz_wxyz[:, soles, :3]
+    return Y_TO_Z @ world @ Y_TO_Z.T, joints[:, 0], standing, fps, joints[:, soles], seen
 
 
 def targets(character: Character, world: np.ndarray, joint_names: list[str]) -> np.ndarray:
@@ -63,13 +75,14 @@ def camera_side(motion: Path) -> np.ndarray:
 def weights(character: Character) -> dict[str, tuple[float, float]]:
     """`WEIGHTS` by the character's bones."""
     sides = lambda role: (role,) if role in character.roles else (f"Left{role}", f"Right{role}")  # noqa: E731
-    return {character.roles[r]: w for role, w in WEIGHTS.items() for r in sides(role)}
+    return {character.roles[r]: w for role, w in WEIGHTS.items() for r in sides(role) if r in character.roles}
 
 
 def retarget_motion(motion: Path, character: Path, out: Path):
     """out/motion.npz, motion_studio.py's MOTION: `fps`, `turns` [T, J, 3, 3], `positions` [T, J, 3], `joint_names`,
     `studio_camera_direction`; and for the bake and the check `rest_joints`, `targets` [T, J, 3], the position each
-    bone was asked for, and `qpos`. The clip's lowest skin point lies on the floor, z = 0. Fingers stay at rest."""
+    bone was asked for, `planted` [T, 4] (`feet.down`) and `qpos`. The clip's lowest skin point lies on the floor,
+    z = 0. Fingers stay at rest."""
     from robokit.helpers.humanoid_retargeting import (
         HumanoidRetargeterOnline,
         HumanoidRetargeterOnlineConfig,
@@ -79,10 +92,11 @@ def retarget_motion(motion: Path, character: Path, out: Path):
 
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
-    c, (world, pelvis, standing, fps) = load_character(character), person(motion, out)
+    c, (world, pelvis, standing, fps, soles, seen) = load_character(character), person(motion, out)
     wanted = targets(c, world, list(SMPLX_JOINT_NAMES))
     root = pelvis * c.rest_joints[c.bone("Hips"), 2] / standing
-    aim = positions(c, wanted, root)
+    planted = feet.down(soles, fps, seen)
+    aim = feet.plant(feet.soles(c), wanted, positions(c, wanted, root), planted, fps)
 
     scored = weights(c)
     config = HumanoidRetargeterOnlineConfig(
@@ -107,7 +121,8 @@ def retarget_motion(motion: Path, character: Path, out: Path):
     joints = positions(c, solved, qpos[:, :3])
     floor = np.array([0.0, 0.0, skinned(c, solved, joints)[..., 2].min()])
     np.savez(out / "motion.npz", fps=fps, turns=solved, positions=joints - floor, joint_names=np.array(c.joint_names),
-             studio_camera_direction=camera_side(motion), rest_joints=c.rest_joints, targets=aim - floor, qpos=qpos)  # fmt: skip
+             studio_camera_direction=camera_side(motion), rest_joints=c.rest_joints, targets=aim - floor,
+             planted=planted, qpos=qpos)  # fmt: skip
 
 
 def check_motion(motion: Path, character: Path) -> dict:
