@@ -1,0 +1,25 @@
+[project]
+name = "embodiedswe-skill"
+version = "0.1.0"
+description = "Host side of EmbodiedSWE-Bench episodes for roboskills.eval.embodiedswe (launch.py, robot.py); the simulator runs in its image."
+requires-python = "==3.10.*"
+dependencies = [
+    "opencv-python==4.11.0.86", "mujoco==3.4.0",
+    "robokit>=1.0.0rc1",
+    "torch==2.11.0", "torchvision==0.26.0", "warp-lang==1.18.0",
+    "imageio[ffmpeg]", "numpy==1.26.4", "scipy==1.15.3", "pyyaml", "trimesh", "shapely",
+]
+
+[tool.uv]
+package = false
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
+# The Robosuite runtime's revs.
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true

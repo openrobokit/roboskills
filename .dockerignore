@@ -1,0 +1,8 @@
+# Images built from the repository root (docker/<name>/Dockerfile) read only these
+*
+!pyproject.toml
+!src/roboskills/__init__.py
+!src/roboskills/eval
+!docker
+src/roboskills/eval/*/.venv
+**/__pycache__

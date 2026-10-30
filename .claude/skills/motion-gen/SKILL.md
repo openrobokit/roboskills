@@ -1,0 +1,1 @@
+../../../src/roboskills/workflows/motion_gen/SKILL.md

@@ -1,0 +1,92 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roboskills"
+version = "0.1.0"
+authors = [{ name = "OpenRoboKit", email = "jianglong.yeh@gmail.com" }]
+description = "A minimal set of agent workflows and tools for robotics"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "scipy>=1.10", "pillow>=10", "tyro>=1.0"]
+
+[project.urls]
+Homepage = "https://openrobokit.com/roboskills"
+Repository = "https://github.com/openrobokit/roboskills"
+
+[project.optional-dependencies]
+sam = ["transformers>=5.0", "torch", "torchvision"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.5", "pytest>=8,<9", "PyYAML", "opencv-python-headless==4.10.0.84",
+    "h5py", "trimesh", "shapely>=2", "mujoco>=3.5",
+    "robokit[mjwarp]>=1.0.0rc1",  # tools/robokit imports it where used, like graspkit; real2sim agents may call its SimMPC
+    "warp-lang==1.18.0",  # MuJoCo Warp's; its CUDA 12 build (sources)
+]
+
+[tool.uv.sources]
+# Warp's CUDA 12 build: PyPI's is built with CUDA 13, which needs driver 580; this one runs on CUDA 12 and 13 drivers alike.
+warp-lang = { url = "https://github.com/NVIDIA/warp/releases/download/v1.18.0/warp_lang-1.18.0+cu12-py3-none-manylinux_2_28_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["roboskills", "roboskills.core*", "roboskills.workflows*", "roboskills.tools*", "roboskills.eval*"]
+exclude = ["*.tests", "*.tests.*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+roboskills = [
+    "core/*.md", "workflows/**/*.md", "workflows/motion_gen/setup.sh", "workflows/agentic_sim/setup.sh",
+    "tools/**/*.md", "tools/mujoco/mano/**/*", "tools/mujoco/franka/**/*",
+    "eval/**/*.md", "eval/*/*.sh", "eval/*/pyproject.toml", "eval/*/uv.lock", "eval/robodojo/*.json",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors.
+    "I",   # isort
+    "F",   # Pyflakes rules.
+    "PLC", # Pylint convention warnings.
+    "PLE", # Pylint errors.
+    "PLR", # Pylint refactor recommendations.
+    "PLW", # Pylint warnings.
+    "TID", # flake8-tidy-imports
+]
+ignore = [
+    "E731",    # Do not assign a lambda expression, use a def.
+    "E741",    # Ambiguous variable name. (l, O, or I)
+    "E501",    # Line too long.
+    "E721",    # Do not compare types, use `isinstance()`.
+    "F722",    # Forward annotation false positive from jaxtyping. Should be caught by pyright.
+    "F821",    # Forward annotation false positive from jaxtyping. Should be caught by pyright.
+    "PLR2004", # Magic value used in comparison.
+    "PLR0915", # Too many statements.
+    "PLR0913", # Too many arguments.
+    "PLR0917", # Too many positional arguments.
+    "PLC0414", # Import alias does not rename variable. (this is used for exporting names)
+    "PLC1901", # Use falsey strings.
+    "PLC0415", # `import` should be at the top-level of a file
+    "PLR5501", # Use `elif` instead of `else if`.
+    "PLR0911", # Too many return statements.
+    "PLR0912", # Too many branches.
+    "PLW0603", # Globa statement updates are discouraged.
+    "PLW2901", # For loop variable overwritten.
+]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.isort]
+known-first-party = ["roboskills"]
+force-single-line = false
+lines-after-imports = 2

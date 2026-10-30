@@ -1,0 +1,41 @@
+name: build
+
+on:
+  push:
+    branches: [main] # only main; PR branches are covered by the pull_request event (no double-run)
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Tests run locally (`make test`), not in CI: CI is the cheap checks only, on the oldest supported Python.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+      - run: uvx ruff check --output-format github
+      - run: uvx ruff format --diff
+      - run: make check-loc
+      - run: make check
+      - run: make check-package
+
+  gate:
+    if: always()
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            exit 1
+          fi

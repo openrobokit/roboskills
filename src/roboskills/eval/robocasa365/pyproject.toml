@@ -1,0 +1,34 @@
+[project]
+name = "robocasa365-skill"
+version = "0.1.0"
+description = "RoboCasa365 kitchens (PandaOmron mobile manipulator) behind the shared Robot contract, for roboskills.eval.robocasa365."
+requires-python = "==3.11.*"
+dependencies = [
+    "robosuite", "mujoco==3.3.1", "numpy==2.2.5", "numba==0.61.2", "scipy==1.15.3",
+    # What RoboCasa 1.0.1 imports at run time; setup.sh installs it from its vendored checkout without its
+    # dataset/training extras (lerobot, tianshou)
+    "lxml==5.3.1", "h5py==3.12.1", "gymnasium==1.1.1", "termcolor", "tqdm", "pyyaml", "pillow",
+    "opencv-python-headless==4.11.0.86",
+    "robokit>=1.0.0rc1",
+    "torch==2.11.0", "torchvision==0.26.0", "warp-lang==1.18.0",
+    "imageio[ffmpeg]", "trimesh", "shapely",
+]
+
+[tool.uv]
+package = false
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+# The benchmark physics is RoboCasa's MuJoCo 3.3.1 and NumPy 2.2.5.
+override-dependencies = ["mujoco==3.3.1", "numpy==2.2.5"]
+# Robosuite's teleoperation devices, test runner, IK-controller stack and GUI OpenCV are unused here.
+exclude-dependencies = ["pynput", "pytest", "mink", "qpsolvers", "opencv-python"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
+# robosuite 1.5.2, the commit RoboCasa 1.0.1 (robocasa/robocasa 4f8a298) runs on in EFE's RoboCasa365 image.
+robosuite = { git = "https://github.com/ARISE-Initiative/robosuite.git", rev = "5ce6643f3092639d08f7b0f90ed1c6a84f50552c" }
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true

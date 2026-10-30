@@ -1,0 +1,93 @@
+{
+ "_": "Camera self-calibration (examples/robodojo_claude/rgbpose/calib.py; robot facts): per camera its parent (world or a link), T (the OpenCV optical frame in the parent) and f (px; square pixels, principal point at the centre). The wrist mount was fitted on the right arm; the left arm is the same X5 model, so the same mount.",
+ "cam_head": {
+  "parent": "world",
+  "T": [
+   [
+    1.0,
+    -3.9e-05,
+    0.000107,
+    -2.3e-05
+   ],
+   [
+    -8.7e-05,
+    -0.866332,
+    0.499468,
+    -0.409029
+   ],
+   [
+    7.4e-05,
+    -0.499468,
+    -0.866332,
+    1.306127
+   ],
+   [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "f": 286.311
+ },
+ "cam_left_wrist": {
+  "parent": "left_link6",
+  "T": [
+   [
+    0.004315,
+    -0.500388,
+    0.865791,
+    0.085034
+   ],
+   [
+    -0.999989,
+    -0.00077,
+    0.004538,
+    -0.000337
+   ],
+   [
+    -0.001604,
+    -0.865801,
+    -0.500386,
+    0.05154
+   ],
+   [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "f": 400.366
+ },
+ "cam_right_wrist": {
+  "parent": "right_link6",
+  "T": [
+   [
+    0.004315,
+    -0.500388,
+    0.865791,
+    0.085034
+   ],
+   [
+    -0.999989,
+    -0.00077,
+    0.004538,
+    -0.000337
+   ],
+   [
+    -0.001604,
+    -0.865801,
+    -0.500386,
+    0.05154
+   ],
+   [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "f": 400.366
+ }
+}

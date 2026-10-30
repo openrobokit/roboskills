@@ -1,0 +1,339 @@
+{
+  "source": "RoboDojo task/RoboDojo/tasks, task/RoboDojo/config/_task.yml, scripts/internal/task_inventory.py",
+  "vendor_commit": "726e9aabfaa642203722eb126f5eaf0f37f3e1ad",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "canonical_task_count": 42,
+  "runnable_variant_count": 54,
+  "episodes_per_seed": 2100,
+  "total_episodes": 6300,
+  "tasks": [
+    {
+      "name": "align_blocks",
+      "dimension": "open",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "arrange_largest_number",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "arrange_largest_number_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "build_tower",
+      "dimension": "precision",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "classify_objects",
+      "dimension": "long-horizon",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "classify_objects_by_language",
+      "dimension": "open",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "cover_blocks",
+      "dimension": "memory",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "deposit_coin",
+      "dimension": "precision",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "fasten_screws",
+      "dimension": "precision",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "fill_egg_holder",
+      "dimension": "long-horizon",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "fill_pen_holder",
+      "dimension": "long-horizon",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "fold_clothes",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "fold_clothes_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "general_pickup",
+      "dimension": "open",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "hang_mugs",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "hang_mugs_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "imitate_sorting_sequence",
+      "dimension": "memory",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "insert_key",
+      "dimension": "precision",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "insert_tubes",
+      "dimension": "precision",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "make_kong",
+      "dimension": "long-horizon",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "make_toast",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "make_toast_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "match_and_pick_from_conveyor",
+      "dimension": "memory",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "organize_table",
+      "dimension": "long-horizon",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "pack_objects_into_box",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "pack_objects_into_box_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "pick_from_conveyor_by_image",
+      "dimension": "open",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "play_Xylophone",
+      "dimension": "precision",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "play_stacking_toy",
+      "dimension": "long-horizon",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "play_tic_tac_toe",
+      "dimension": "long-horizon",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "plug_in_charger",
+      "dimension": "precision",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "pour_balls_into_vase",
+      "dimension": "precision",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "pour_by_language",
+      "dimension": "open",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "pour_liquid_into_cup",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "pour_liquid_into_cup_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "press_by_number",
+      "dimension": "memory",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "push_T",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "push_T_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "put_bottles_into_dustbin",
+      "dimension": "long-horizon",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "solve_equation",
+      "dimension": "open",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "sort_nesting_dolls_by_size",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "sort_nesting_dolls_by_size_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "stack_blocks",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "stack_blocks_by_language",
+      "dimension": "open",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "stack_blocks_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "stack_bowls",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "stack_bowls_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "store_laptop_and_headphones",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "store_laptop_and_headphones_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "store_tools_in_toolbox",
+      "dimension": "open",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "swap_T",
+      "dimension": "memory",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "swap_blocks",
+      "dimension": "memory",
+      "variant": "standard",
+      "episodes_per_seed": 50
+    },
+    {
+      "name": "sweep_blocks",
+      "dimension": "generalization",
+      "variant": "standard",
+      "episodes_per_seed": 25
+    },
+    {
+      "name": "sweep_blocks_random",
+      "dimension": "generalization",
+      "variant": "random",
+      "episodes_per_seed": 25
+    }
+  ]
+}
