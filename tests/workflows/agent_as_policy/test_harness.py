@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from roboskills.core import agent, episode
 from roboskills.core.llm import LAST
@@ -125,6 +126,20 @@ def test_failed_llm_voids_the_episode(tmp_path, monkeypatch):
 
     summary = run.local(vector_adapter(tmp_path / "a.py", 1), tmp_path / "out", {}, llm=llm)
     assert summary["voids"] == 1 and summary["successes"] == 0 and "429" in summary["envs"][0]["void"], summary
+
+
+def test_a_lost_robot_ends_the_episode_void(tmp_path):
+    class Gone:
+        lost = None
+
+        def finish(self, out):
+            raise RuntimeError(f"the simulator is gone ({self.lost})")
+
+    tools = FakeTools(Gone(), tmp_path)
+    tools.drop = lambda: setattr(tools.robot, "lost", "OSError(9, 'Bad file descriptor')")
+    ep, replies = episode.Episode(tools), iter(["```python\nbot.drop()\n```", "```python\nfinish()\n```"])
+    assert agent.run(agent.Repl(tools, ep), "t", tmp_path, lambda s, m: next(replies), prompt="{api}") == (True, 1)
+    assert episode.end(ep)["finished_by"] == "runner" and "the robot is gone" in ep.result["void"]
 
 
 def test_unlocked_inside_unlocked():
@@ -303,9 +318,20 @@ def test_local_start_fails():
 
     with tempfile.TemporaryDirectory() as d:
         (Path(d) / "a.py").write_text("def make_vector(**kw):\n    raise RuntimeError('sim did not start')\n")
-        r = subprocess.run([sys.executable, "-m", "roboskills.workflows.agent_as_policy.run", "--adapter", f"{d}/a.py", "--out", d],
+        r = subprocess.run([sys.executable, "-m", "roboskills.workflows.agent_as_policy.run", "--adapter", f"{d}/a.py", "--out", f"{d}/out"],
                            capture_output=True, text=True, timeout=120, check=False)  # fmt: skip
         assert r.returncode and "sim did not start" in r.stderr, r.stderr[-500:]  # exits, does not hang
+
+
+def test_a_folder_that_holds_a_run_is_refused(tmp_path, monkeypatch, capsys):
+    from roboskills.workflows.agent_as_policy import run
+
+    (tmp_path / "env0").mkdir()
+    (tmp_path / "env0" / "log.jsonl").write_text('{"turn": 0}\n')  # its turns would run on into the next run's
+    monkeypatch.setattr("sys.argv", ["run", "--adapter", "a.py", "--out", str(tmp_path)])
+    with pytest.raises(SystemExit):
+        run.main()
+    assert "already holds a run" in capsys.readouterr().err
 
 
 def test_one_env_adapter_plays_an_episode_end_to_end(tmp_path, monkeypatch):
@@ -330,7 +356,7 @@ def test_one_env_adapter_plays_an_episode_end_to_end(tmp_path, monkeypatch):
     assert summary["episodes"] == 1 and summary["successes"] == 1 and summary["voids"] == 0
     log = [json.loads(line) for line in (tmp_path / "out/env0/log.jsonl").read_text().splitlines()]
     assert [row["images"] for row in log] == [["head"], []] and "llm_s" in log[0]
-    assert json.loads((tmp_path / "out/env0/result.json").read_text()) == {"success": True}
+    assert json.loads((tmp_path / "out/env0/result.json").read_text()) == {"success": True, "grasp_backend": None}
     assert summary["envs"][0]["turns"] == 2
     assert closed == [1]  # the SAM worker is let go
 

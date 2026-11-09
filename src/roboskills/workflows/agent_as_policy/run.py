@@ -9,7 +9,8 @@ gets its own Tools and agent loop, all at once in this process: one SAM 3, one g
 lock (a turn's own GPU work: RoboKit, the grasp policy), let go while a robot executes, observes or SAM runs, and the
 SAM lock (its one worker), so the envs move at once, plan while another segments, and the agents think at once.
 Results: DIR/env<i>/result.json and log.jsonl, and DIR/summary.json (successes and voids, startup_s, episodes_s, and
-each env's turns, cost and seconds). A void episode (its LLM failed: the model could not play it) is finished to free
+each env's turns, cost and seconds); each result and env row has `grasp_backend`, the learned grasp backend's $GRASP_*
+settings (None: none, so the agent built its own grasps). A void episode (its LLM failed: the model could not play it) is finished to free
 the simulator but counts as neither success nor failure; rerun it. Each episode saves its result when it ends.
 """
 
@@ -73,9 +74,19 @@ def local(adapter, out, kw, model="claude-opus-5-5", max_turns=None, llm=claude)
                 row = dict(agent_finished=False, error=repr(e))
             with plan:
                 end(episode, row["error"][:300] if "error" in row else None)
+            grasps = getattr(tools, "grasp_backend", None)  # an adapter's own tools may have no learned grasps
+            if episode.result is not None:
+                episode.result["grasp_backend"] = grasps
             save(episode.out / "result.json", episode.result, default=to_json)
             result = {k: v for k, v in (episode.result or {}).items() if k in OUTCOME}
-            return dict(env=i, **row, **result, cost_usd=round(cost["usd"], 4), seconds=round(time.monotonic() - t, 1))
+            return dict(
+                env=i,
+                **row,
+                **result,
+                grasp_backend=grasps,
+                cost_usd=round(cost["usd"], 4),
+                seconds=round(time.monotonic() - t, 1),
+            )
 
         with ThreadPoolExecutor(len(bots)) as pool:
             rows = list(pool.map(one, range(len(bots)), bots))
@@ -95,6 +106,8 @@ def main():
     cut = argv.index("--") if "--" in argv else len(argv)  # k=v after "--" go to the adapter's make_vector() or make()
     a = p.parse_args(argv[:cut])
     kw = dict(x.split("=", 1) for x in argv[cut + 1 :])
+    if a.out.is_dir() and any(a.out.iterdir()):  # its logs append and its results overwrite: one run per folder
+        p.error(f"--out {a.out} already holds a run: give each run its own folder")
     llm = deepseek if a.model.startswith("deepseek") else claude
     print(json.dumps(local(a.adapter, a.out.resolve(), kw, a.model, a.max_turns, llm)))
 

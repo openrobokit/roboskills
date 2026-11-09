@@ -12,7 +12,7 @@ repository.
 |---|---|
 | `src/roboskills/workflows/<name>/` | A workflow's `SKILL.md` (frontmatter `name` and `description`, then the agent's instructions), its own logic and, when released, its launcher `run.py`. |
 | `src/roboskills/tools/<name>/` | One model, simulator or library: `SKILL.md`, a `README.md` with an example on `assets/example_data/`, and any thin wire of ours. `tools/robokit/` also holds `bot` and the perception, grasping and planning under it. |
-| `src/roboskills/eval/` | Benchmark runtimes, one folder each with `launch.py`, `ROBOT.md` and `SKILL.md`. `interface.py` is their contract, `serve.py` their server, `check.py` validates one without a model. |
+| `src/roboskills/eval/` | Benchmark runtimes, one folder each with `launch.py`, `ROBOT.md` and `SKILL.md`. `interface.py` is their contract, `serve.py` their server, `check.py` validates one without a model; `real/` is what the real benches (`yam/`) share. |
 | `src/roboskills/core/` | Code two or more launchers share. |
 | `docker/` | One image per simulator or CUDA-compiling model, pushed to GHCR. |
 | `assets/` | README media and `example_data/`. |

@@ -128,6 +128,9 @@ class Trajectory:
     base: Optional[np.ndarray] = None  # (N, 3) [x, y, yaw] world targets of a mobile base (yaw unwrapped); None:
     #                                    it holds still. The arms keep their joints, riding along
     body: Optional[np.ndarray] = None  # (N,) pelvis-height targets of a robot with a `Body`; None: it holds its height
+    contact: Optional[np.ndarray] = None  # (N,) bool: waypoints planned in contact (not kept clear of the table and
+    #                                       the robot: an approach in, a lift, a push), which a real robot may run
+    #                                       compliant; None: none
 
 
 @dataclass
@@ -136,6 +139,7 @@ class Follow:
     done: bool  # the step budget is spent
     stopped: bool  # `stop` ended it early
     obs: Obs  # proprioception at the end (cams empty)
+    refused: Optional[str] = None  # why the robot would not run `path` (a safety limit it breaks); nothing moved
 
 
 @runtime_checkable
@@ -157,7 +161,8 @@ class Robot(Protocol):
         base where it is unless `path.base` drives it (a base blocked short of its path ends the motion there), and a
         body at its height unless `path.body` moves it.
         `stop(obs)` (proprioception only) is checked at least every few control steps; True ends the
-        motion there, holding the current measured posture. Stop at the step limit."""
+        motion there, holding the current measured posture. Stop at the step limit. A robot that refuses a path
+        (a real one's safety limits) moves nothing and returns `stopped` with `refused` saying why."""
 
     def robot_mask(self, cam: str, obs: Obs) -> Optional[np.ndarray]:
         """(H, W) bool, True where camera `cam` sees the robot; None to let the skills use the model."""

@@ -87,10 +87,10 @@ class Repl:
         self.images += [(n, getattr(c, "rgb", c)) for n, c in getattr(images, "cams", images).items()]
 
     def exec(self, code):
-        """(printed output, episode finished, images [(name, base64 PNG)] the code showed)"""
+        """(printed output, episode over: finished, or its robot gone; images [(name, base64 PNG)] the code showed)"""
         out = execute(code, self.ns)
         shown, self.images = [(n, png64(rgb)) for n, rgb in self.images], []
-        return out, self.episode.result is not None, shown
+        return out, self.episode.result is not None or bool(getattr(self.episode, "gone", None)), shown
 
     def api(self):
         t, names = self.tools, {k: v for k, v in self.ns.items() if k in ("finish", "show")}
@@ -102,7 +102,7 @@ class Repl:
 def run(repl, instruction, out, llm=claude, max_turns=None, max_bad=None, context="", *, prompt,
         initial_code="print(bot.status())", status_code="print(bot.status())"):  # fmt: skip
     """Drive one episode through `repl`. Returns (finished, turns); every turn is logged to out/log.jsonl, with the
-    LLM call's seconds and (from `claude`) its usage. `prompt`: the system prompt, with `{api}` where the tools' API
+    LLM call's seconds (`llm_s`), the block's (`exec_s`) and (from `claude`) its usage. `prompt`: the system prompt, with `{api}` where the tools' API
     listing goes (e.g. roboskills/workflows/agent_as_policy/SKILL.md).
     `context`: text given with the instruction: the robot's ROBOT.md from its eval runtime, or what a launcher itself
     produced (frozen research); never a file from artifacts/, which agents do not see. No limit by default
@@ -127,13 +127,18 @@ def run(repl, instruction, out, llm=claude, max_turns=None, max_bad=None, contex
             reply = llm(system, append_only(messages))
             llm_s = round(time.monotonic() - t, 1)
             messages.append(dict(role="assistant", content=reply))
+            live = out / "reply.json.tmp"  # the turn in progress, for a live viewer (log.jsonl: once it returns)
+            live.write_text(json.dumps(dict(turn=turn, reply=reply, llm_s=llm_s)))
+            live.replace(out / "reply.json")
             m = CODE.search(reply)
+            t = time.monotonic()
             receipt, done, imgs = repl.exec(m.group(1)) if m else ("No ```python block found. Reply with exactly one.", False, [])  # fmt: skip
             bad = bad + 1 if not m or receipt.startswith("ERROR") else 0
             if not done:
                 receipt += "[status] " + repl.exec(status_code)[0]
+            exec_s = round(time.monotonic() - t, 1)  # the block and its status: the robot moving, perception, a review
             messages.append(dict(role="user", content=receipt, images=imgs))
-            row = dict(turn=turn, reply=reply, receipt=receipt, images=[n for n, _ in imgs], llm_s=llm_s)
+            row = dict(turn=turn, reply=reply, receipt=receipt, images=[n for n, _ in imgs], llm_s=llm_s, exec_s=exec_s)
             log.write(json.dumps(dict(row, usage=LAST.usage) if LAST.usage else row) + "\n")
             log.flush()
             if done or (max_bad and bad >= max_bad):

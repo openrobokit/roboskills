@@ -35,7 +35,8 @@ def model_of(arms=("left",)):
                                                        for a in arms}),
                            info={a: SimpleNamespace(idx=[0]) for a in arms}, tcp=tcp_at_joint,
                            set_arm=lambda a, fq, q: np.asarray(q, float).reshape(np.shape(fq)),
-                           fq=lambda a, obs: np.asarray(obs.q[a], float))  # fmt: skip
+                           fq=lambda a, obs: np.asarray(obs.q[a], float),
+                           robot_points=lambda obs: np.zeros((0, 3)))  # fmt: skip
 
 
 def faked(model, blocked=()):
@@ -209,3 +210,20 @@ def test_the_planner_passes_robokit_the_keywords_it_takes():
     call = inspect.getsource(Planner._planner).split("MotionPlanner(", 1)[1].split("\n", 1)[0]
     used = set(re.findall(r"(\w+)=", call))
     assert used and used <= set(inspect.signature(mp.MotionPlanner.__init__).parameters), used
+
+
+def test_the_grid_leaves_out_points_on_the_robot_where_it_stands_and_on_the_table_top():
+    """A camera a little off its calibration leaves slivers of the arm the robot mask misses, and the table top seen a
+    centimetre high: the arm is there and the table is a surface already, so neither is an obstacle; an object is."""
+    model = model_of()
+    model.info["left"].M = SimpleNamespace(root=SimpleNamespace(T_world_base=np.eye(4)))
+    model.robot_points = lambda obs: np.array([[0.5, 0.5, 0.5]])  # the robot's surface where it stands
+    planner, grid = Planner(model), []
+    volume = SimpleNamespace(update=lambda points, reset: grid.append(points))
+    scene = np.array(
+        [[0.52, 0.5, 0.5], [0.4, 0.0, 0.81], [0.4, 0.0, 0.85], [0.4, 0.0, 0.6]]
+    )  # arm, table, object, below
+    square = np.array([[1.0, 0, -1.2], [-1.0, 0, 0.0], [0, 1.0, -0.5], [0, -1.0, -0.5]])  # 0 <= x <= 1.2, |y| <= 0.5
+    planner._obstacles("left", volume, (0.8, square), scene, now_of(["left"], [0.3]))
+    kept = grid[-1][~np.isclose(grid[-1][:, 2], 0.8 - VOXEL)]
+    assert np.allclose(kept, [[0.4, 0.0, 0.85], [0.4, 0.0, 0.6]])

@@ -45,12 +45,14 @@ def test_status_reports_the_live_robot_with_raw_tcp_poses():
 def test_plan_starts_from_the_live_joints_with_the_table_and_scene_and_takes_the_first_reachable():
     bot, obs = bot_with()
     seen = []
-    bot.planner = SimpleNamespace(plan=lambda *a: seen.append(a) or [None, "second", "third"])
+    second, third = SimpleNamespace(index=None), SimpleNamespace(index=None)
+    bot.planner = SimpleNamespace(plan=lambda *a: seen.append(a) or [None, second, third])
     poses = [Pose("move", "left", rank=k) for k in range(3)]
     scene = np.zeros((2, 3))
-    assert bot.plan(poses, table=(0.75, None), scene=scene) == "second" and seen == [(poses, obs, (0.75, None), scene)]
+    assert bot.plan(poses, table=(0.75, None), scene=scene) is second and seen == [(poses, obs, (0.75, None), scene)]
+    assert second.index == 1 and bot.reach(poses) == [1, 2]  # every reachable pose's index, from one call
     bot.planner = SimpleNamespace(plan=lambda *a: [None, None])
-    assert bot.plan(poses) is None
+    assert bot.plan(poses) is None and bot.reach(poses) == []
 
 
 def test_execute_runs_a_plan_once_and_reports_its_outcome():
@@ -77,3 +79,46 @@ def test_execute_refuses_a_plan_made_before_the_arm_moved():
     with pytest.raises(ValueError, match="moved since"):
         bot.execute(FakePlan(q_start=0.0))
     bot.execute(FakePlan(q_start=0.015))  # within 0.02 rad: still its start
+
+
+def test_the_api_listing_says_whether_learned_grasps_are_available(monkeypatch):
+    """Without a $GRASP_BACKEND the agent's API listing marks grasp_poses unavailable and a call says to use
+    heuristic_grasp; with one it offers them, and `grasp_backend` holds the $GRASP_* settings a run records."""
+    from roboskills.core.agent import Repl
+    from roboskills.tools.robokit import bot as bot_mod
+
+    monkeypatch.setattr(bot_mod, "RobotModel", lambda robot: SimpleNamespace(robot=robot))
+    monkeypatch.setattr(bot_mod, "Planner", lambda model: None)
+    monkeypatch.delenv("GRASP_BACKEND", raising=False)
+    monkeypatch.setenv("GRASP_POLICY_N", "64")
+    bot = Tools(SimpleNamespace(), sam=None)
+    assert bot.grasp_backend is None
+    listed = Repl(bot).api()
+    assert "bot.grasp_poses(arm, points, table_z, scene=None" in listed and "Not in this run" in listed
+    with pytest.raises(ValueError, match="heuristic_grasp"):
+        bot.grasp_poses("left", np.zeros((1, 3)), 0.0)
+    monkeypatch.setenv("GRASP_BACKEND", "fake_backend")
+    bot = Tools(SimpleNamespace(), sam=None)
+    assert bot.grasp_backend == {"GRASP_BACKEND": "fake_backend", "GRASP_POLICY_N": "64"}
+    listed = Repl(bot).api()
+    assert "available in this run" in listed and "Not in this run" not in listed
+
+
+def test_a_refused_path_stops_the_plan_and_says_why():
+    bot, obs = bot_with()
+    followed = []
+
+    def follow(traj, stop=None):
+        followed.append(traj)
+        return Follow(steps=0, done=False, stopped=True, obs=obs, refused="below the table")
+
+    bot.robot.follow = follow
+    plan = FakePlan()
+    plan.record = lambda follows, ended: (
+        setattr(plan, "refused", follows[-1].refused)
+        or setattr(plan, "steps", 0)
+        or setattr(plan, "ended", ended)
+        or setattr(plan, "stopped", True)
+    )  # noqa: E501
+    r = bot.execute(plan)
+    assert followed == ["in"] and r["refused"] == "below the table" and r["stopped"] and r["steps"] == 0

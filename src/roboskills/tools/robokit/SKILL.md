@@ -12,12 +12,16 @@ adapters require.
 **Calls** (modules here; read their docstrings, [README.md](README.md) has the `bot` verbs):
 
 - `robot_model.RobotModel(robot)` on a `roboskills.eval.interface.Robot`: per arm `fq`, `tcp(arm, q)` (4, 4), surface
-  points; `write_collision_spheres(rk, path)` for a model without a sphere file.
+  points; `write_collision_spheres(rk, path)` for a model without a sphere file (`fit_spheres` per link: spheres centred
+  inside the mesh, each reaching about 2 cm past it, at most 16 a link before the slack grows; a hand link with no
+  collision mesh uses its visual one).
 - `planner.Planner(model).plan(poses, robot_now, table=None, scene=None)`: one `Plan` per `action.Pose`, or None where
   RoboKit finds no path; poses of one arm and shape are one RoboKit batch.
 - `bot.Tools(robot, sam, out=None)`: the agent's `bot` (status, observe, segment, table, fuse, describe, register,
-  carried, heuristic_grasp, grasp_poses, place_pose, plan, execute); `sam` is a caller-owned
+  carried, heuristic_grasp, grasp_poses, place_pose, twist_pose, plan, execute); `sam` is a caller-owned
   `roboskills.tools.sam3.sam3.Sam`.
+- `action.twist_pose(T_tcp, axis, point, deg, arm)`: a `twist` Pose turning a held object about an axis, its arc a
+  waypoint every `TWIST_STEP` deg (each solved onto it) the planner joins into one contact run, slow (`SLOW["twist"]`) unless given a `speed` (1.0: a move's, for a pour).
 - Real2sim agents: `robokit.helpers.sim_mpc` and `robokit.terms` (their docstrings) on MuJoCo Warp.
 - Real2sim hands: `retarget.retarget_hand` (HaWoR's hand on a floating RoboKit hand preset, default Sharpa, in the
   scene: `retarget/`; the wrist steadied by `--steady` and `--calm`, 0 for neither) and `mpc.track_with_mpc` (SimMPC
@@ -55,7 +59,7 @@ adapters require.
   scale at `frame`, written in the same layout plus `fit.json` (`scale`, `iou`, `iou_start`); real2sim's `fit`.
 
 **Returns.** A `Plan`'s `paths` are the robot's `Trajectory`s, one per segment, sampled every 0.02 s; `execute` returns
-`steps`, `ended`, `stopped`, `q`, `hand`, `tcp`, `tcp_error_m`, `tcp_error_deg` and `short`. Frames are world metres
+`steps`, `ended`, `stopped`, `refused`, `q`, `hand`, `tcp`, `tcp_error_m`, `tcp_error_deg` and `short`. Frames are world metres
 and radians unless named; jaw readings are 0 closed .. 1 open.
 
 **GPU memory:** one planner and obstacle grid per arm and batch size, 0.2 GB at the batch of 16 used here (0.8 GB at
@@ -63,7 +67,9 @@ and radians unless named; jaw readings are 0 closed .. 1 open.
 
 **Known failures:** `plan` gives None for an unreachable pose; `execute` refuses a plan that already ran or whose start
 is over 0.02 rad from the live joints; planning keeps clear of the table and observed points but not yet of a held
-load; `grasp_poses` raises without a `$GRASP_BACKEND` (build the grasp with `heuristic_grasp`). The mask fit is
+load; `grasp_poses` raises without a `$GRASP_BACKEND` (build the grasp with `heuristic_grasp`); `Tools.grasp_backend`
+holds the backend's `$GRASP_*` settings (None: none), and without one the API listing says `grasp_poses` is not
+available. The mask fit is
 local: a start far from the mask (IoU near 0) has nothing to follow, and a symmetric object keeps its starting turn
 about its axis.
 

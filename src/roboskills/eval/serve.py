@@ -28,6 +28,7 @@ import hashlib
 import importlib
 import os
 import shutil
+import signal
 import socket
 import sys
 import tempfile
@@ -43,8 +44,9 @@ PACKAGE = Path(__file__).resolve().parents[1]  # this `roboskills` (src/roboskil
 _open = []  # this process's Remotes, for close()
 
 
-def remote(module, kw, *, out, image, runtime=None, gpu=None, boot_s=900, python=None):
-    """Start an episode server; native `python` optionally selects the simulator's own interpreter.
+def remote(module, kw, *, out, image, runtime=None, gpu=None, boot_s=900, python=None, stop_s=30.0):
+    """Start an episode server; native `python` optionally selects the simulator's own interpreter. `stop_s`: how long
+    closing it waits for the episode's own `close` before killing it (None: until it is done).
 
     Preserve its venv symlink: resolving it would select the base Python without its installed SDK.
     """
@@ -58,12 +60,15 @@ def remote(module, kw, *, out, image, runtime=None, gpu=None, boot_s=900, python
     args = [module, "--port", port, "--out", out] + (["--export"] if runtime != "native" else [])
     args += ["--"] + [f"{k}={v}" for k, v in kw.items() if v is not None]
     if runtime == "native":
-        server, python = Server(runtime, None, gpu), str(Path(python).absolute()) if python else sys.executable
+        server, python = (
+            Server(runtime, None, gpu, stop_s=stop_s),
+            str(Path(python).absolute()) if python else sys.executable,
+        )
     else:
         # caches (Warp's, numba's) go to a writable home and /tmp: Apptainer's layer over the image is a small tmpfs
         env = dict(HOME="/tmp", NUMBA_CACHE_DIR="/tmp/numba", MUJOCO_EGL_DEVICE_ID="0", PYTHONUNBUFFERED="1")
         mounts = [(PACKAGE, "/src/roboskills", "ro"), (out, out, "rw")]
-        server = Server(runtime, image, gpu, env=env, mounts=mounts, home=True)
+        server = Server(runtime, image, gpu, env=env, mounts=mounts, home=True, stop_s=stop_s)
         python = "python"
     log = out / "sim.log"
     server.start([python, "-m", "roboskills.eval.serve", *args], log)
@@ -294,7 +299,8 @@ def handle(robot, req, conn, out, export):
         if req["name"] not in getattr(robot, "REMOTE", ()):
             raise PermissionError(f"{req['name']!r} is not one of this adapter's REMOTE methods")
         return {"result": getattr(robot, req["name"])(*req["args"])}
-    if op == "close":
+    if op == "close":  # the host's SIGTERM follows the reply: it must not interrupt the episode's close (a park)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         return {}
     raise ValueError(f"unknown op {op!r}")
 
@@ -310,34 +316,41 @@ def main():
     a = p.parse_args(argv[:cut])
     kw = dict(x.split("=", 1) for x in argv[cut + 1 :])
     lst = socket.create_server(("127.0.0.1", a.port))  # bound first: a taken port fails fast, before the episode
+    signal.signal(signal.SIGTERM, _interrupt)  # the host closing us: the episode's own close still runs
     robot = importlib.import_module(a.module).episode(**kw)
     print(f"\nready {a.module} port {a.port}", flush=True)
-    conn, _ = lst.accept()
-    lst.close()
-    while True:
-        try:
-            req = recv(conn)
-        except (EOFError, OSError):
-            break
-        try:
-            rep = handle(robot, req, conn, a.out, a.export)
-        except Exception as e:  # noqa: BLE001  (the reply carries it)
-            traceback.print_exc()
-            rep = {"error": f"{type(e).__name__}: {e}"}
-        poses = {name: arm.T_world_base for name, arm in robot.arms.items()}
-        rep.update(ended=bool(getattr(robot, "ended", False)), poses=poses)
-        try:
-            send(conn, rep)
-        except (
-            TypeError,
-            ValueError,
-        ) as e:  # a reply the wire cannot carry (sends nothing): this call fails, not the episode
-            traceback.print_exc()
-            send(conn, {"error": f"{type(e).__name__}: {e}", "ended": rep["ended"], "poses": poses})
-        if req.get("op") == "close":
-            break
-    if hasattr(robot, "close"):
-        robot.close()
+    try:
+        conn, _ = lst.accept()
+        lst.close()
+        while True:
+            try:
+                req = recv(conn)
+            except (EOFError, OSError):
+                break
+            try:
+                rep = handle(robot, req, conn, a.out, a.export)
+            except Exception as e:  # noqa: BLE001  (the reply carries it)
+                traceback.print_exc()
+                rep = {"error": f"{type(e).__name__}: {e}"}
+            poses = {name: arm.T_world_base for name, arm in robot.arms.items()}
+            rep.update(ended=bool(getattr(robot, "ended", False)), poses=poses)
+            try:
+                send(conn, rep)
+            except (
+                TypeError,
+                ValueError,
+            ) as e:  # a reply the wire cannot carry (sends nothing): this call fails, not the episode
+                traceback.print_exc()
+                send(conn, {"error": f"{type(e).__name__}: {e}", "ended": rep["ended"], "poses": poses})
+            if req.get("op") == "close":
+                break
+    finally:  # also on SIGTERM or Ctrl+C: real arms park before their motors turn off
+        if hasattr(robot, "close"):
+            robot.close()
+
+
+def _interrupt(signum, frame):
+    raise KeyboardInterrupt(f"signal {signum}")
 
 
 if __name__ == "__main__":

@@ -34,7 +34,8 @@ python -m pytest tests/workflows/agent_as_policy tests/tools/robokit
 
 Benchmark runtimes live in [`src/roboskills/eval/`](../../eval/interface.py): RoboDojo, DexJoCo, LIBERO,
 Robosuite, RoboTwin, two with a mobile base driven by `bot.drive` (RoboCasa365 and BEHAVIOR-1K), EmbodiedSWE-Bench
-(a Panda, a fixed G1 and a walking G1) and HumanoidArena, whose whole-body G1 also squats and sits with `bot.posture`. Each `launch.py` is an adapter (`--adapter roboskills.eval.<benchmark>.launch`) and each
+(a Panda, a fixed G1 and a walking G1) and HumanoidArena, whose whole-body G1 also squats and sits with `bot.posture`. The real I2RT YAM bench
+([`eval/yam`](../../eval/yam/SKILL.md)) runs behind the same contract, judged by their operator. Each `launch.py` is an adapter (`--adapter roboskills.eval.<benchmark>.launch`) and each
 `ROBOT.md` describes its robot, for every agent; each
 `SKILL.md` covers its environment and an allocated GPU. RoboDojo also serves vector envs and eval sets.
 

@@ -50,7 +50,9 @@ poses itself.
 `heuristic_grasp`: the agent's own grasp, its 6-DoF TCP and a hand command of the hand's DOF, approached `action.PRE_GRASP`
 back along the TCP's +x with the hand open. `grasp_poses`: the best `tries` (8) of a learned backend (`GRASP_BACKEND`
 names a module whose `candidates(S, arm, points, table_z, obstacles, target, avoid, axis, cone, seed)` returns grasp
-`Pose`s; without one it raises), `variant` rotating the list. `place_pose`: the held object set upright, its centre at `pos` [x, y(, surface z)], turned to the
+`Pose`s; without one it raises, and `Tools.grasp_poses`'s docstring, which the agent's API listing shows, says it is
+not available), `variant` rotating the list; `Tools.grasp_backend` (`action.grasp_backend()`) is the backend's
+`$GRASP_*` settings or None. `place_pose`: the held object set upright, its centre at `pos` [x, y(, surface z)], turned to the
 long-axis heading nearest `yaw`, pressed `action.PUSH` past contact, the hand opening there.
 
 Under them: `robot_model` (`RobotModel`: TCP poses and surface points, nothing about the scene), `shape` (boxes, hidden
