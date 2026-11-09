@@ -1,0 +1,53 @@
+# The real YAM bench's rig: copy it to ~/.config/roboskills/yam.yaml (or point $ROBOSKILLS_YAM_RIG at your copy) and
+# replace what your station measures: each arm's CAN channel and base pose, each camera's serial and calibrated pose,
+# the table height. World frame: metres, +z up; poses are 4x4 homogeneous matrices (row-major).
+
+rate: 50                     # Hz: command ticks, one budget step each
+table_z: 0.0                 # world z of the table top
+workspace:                   # the TCP stays inside this world box
+  lo: [-0.1, -0.6, -0.02]
+  hi: [0.7, 0.6, 0.7]
+contact_kp: 0.3              # arm stiffness on contact waypoints (a grasp's way in, a lift): compliant
+hand_speed: 0.5              # jaw command per s (0 closed .. 1 open): it closes over 2 s, never snaps shut
+review_under: 0.025          # m: a plan whose TCP stays this near its start, jaws unchanged, runs unreviewed (0: review all)
+
+arms:
+  left:
+    channel: can_left        # its CAN interface (ip -br link | grep can)
+    arm: yam_ultra           # i2rt's arm type
+    gripper: linear_4310     # i2rt's gripper type
+    T_world_base: [[1, 0, 0, 0], [0, 1, 0, 0.305], [0, 0, 1, 0], [0, 0, 0, 1]]
+    rest: [0, 0, 0, 0, 0, 0] # rad: folded, resting on itself; home, and where it parks before its motors turn off
+  right:
+    channel: can_right
+    arm: yam_ultra
+    gripper: linear_4310
+    T_world_base: [[1, 0, 0, 0], [0, 1, 0, -0.305], [0, 0, 1, 0], [0, 0, 0, 1]]
+    rest: [0, 0, 0, 0, 0, 0]
+
+cameras:                     # RealSense serials (rs-enumerate-devices); poses from your calibration
+  front:                     # fixed: its pose in the world
+    serial: "REPLACE_WITH_SERIAL"
+    T_world_cam: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 1], [0, 0, 0, 1]]
+    depth_scale: 1.0         # optional: scales its depth, for a camera whose depth reads short of its colour pose
+  top:
+    serial: "REPLACE_WITH_SERIAL"
+    T_world_cam: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 1], [0, 0, 0, 1]]
+  wrist_left:                # on an arm: its pose on the arm's flange (the `gripper` link)
+    serial: "REPLACE_WITH_SERIAL"
+    arm: left
+    T_ee_cam: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+  wrist_right:
+    serial: "REPLACE_WITH_SERIAL"
+    arm: right
+    T_ee_cam: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+
+record: [front, top]         # one video_<camera>.mp4 each (one name or a list)
+
+# limits:                    # optional: the safety margins, defaults shown (eval/real/safety.py's Limits)
+#   clearance: 0.005         # m every checked point stays above the table
+#   contact_depth: 0.01      # m the hand may press into the table on a contact waypoint
+#   separation: 0.03         # m between the two arms' surfaces
+#   start_tol: 0.1           # rad a path's first waypoint may lie from the measured joints
+#   track: 0.15              # rad a joint may lag its target before the motion stops
+#   track_contact: 0.35      # ... on a contact waypoint

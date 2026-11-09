@@ -225,9 +225,9 @@ def opening(hw, opened, speed, dt):
                                                      for a in opened}, T={})  # fmt: skip
 
 
-def park(hw, limits, bodies, tcp, rest, home, dt, opened=None, hand_speed=0.5):
-    """Hold, then take the arms to `rest` {arm: (n,)} on checked straight paths at half speed, directly or through
-    `home`; returns why they are not there (None: parked). `opened` {arm: hand command}: first open the hands there at
+def park(hw, limits, bodies, tcp, rest, dt, opened=None, hand_speed=0.5):
+    """Hold, then take the arms to `rest` {arm: (n,)} on a checked straight path at half speed; returns why they are
+    not there (None: parked). `opened` {arm: hand command}: first open the hands there at
     `hand_speed` per s, the arms held (what they hold drops). Ctrl+C or SIGTERM during it leaves them held."""
 
     def go(targets):  # a straight joint line there at half speed, a waypoint per tick
@@ -248,9 +248,7 @@ def park(hw, limits, bodies, tcp, rest, home, dt, opened=None, hand_speed=0.5):
         why = run_path(hw, limits, bodies, tcp, path, dt) if path else None
         if why:
             return f"opening the hands: {why}"
-        if go(rest) is None:
-            return None
-        return go(home) or go(rest)  # rest refused straight: through home
+        return go(rest)
     except KeyboardInterrupt:
         for h in hw.values():
             h.hold()

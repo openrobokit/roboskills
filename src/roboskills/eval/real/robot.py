@@ -101,10 +101,6 @@ class RealRobot:
         interface.Arm} and `limits` (safety.Limits)."""
         raise NotImplementedError
 
-    def _rest_of(self, a):
-        """Where arm `a` parks when the rig gives no `rest`: all zeros (folded)."""
-        return np.zeros(self.hw[a].n)
-
     def _T_world_cam(self, spec):
         """A fixed camera's pose: `T_world_cam`, or `T_base_cam` on the base of the arm `base` names."""
         if "T_world_cam" in spec:
@@ -129,8 +125,7 @@ class RealRobot:
         `rest` on checked paths at half speed (motors stay on)."""
         self.operator.say("Opening the hands, then moving to rest")
         with self.motion:
-            why = safety.park(self.hw, self.limits, self.bodies, self.tcp, self._rests(),
-                              {a: self.arms[a].home for a in self.hw}, self.dt,
+            why = safety.park(self.hw, self.limits, self.bodies, self.tcp, self._rests(), self.dt,
                               opened={a: self.arms[a].hand.open for a in self.hw}, hand_speed=self.hand_speed)  # fmt: skip
         if why:
             self._fault("rest", why)
@@ -139,7 +134,8 @@ class RealRobot:
         return why
 
     def _rests(self):
-        return {a: np.asarray(self.rig["arms"][a].get("rest", self._rest_of(a)), float) for a in self.hw}
+        """{arm: its home, the rig's `rest`}: where it parks before its motors turn off."""
+        return {a: self.arms[a].home for a in self.hw}
 
     def _closure(self, a, u):
         """How closed hand command `u` is, 0 (open) .. 1 (closed), averaged over its values."""
@@ -508,8 +504,7 @@ class RealRobot:
         if self.queue is not None:
             self.queue.stop()
         if self.hw and release:
-            why = safety.park(self.hw, self.limits, self.bodies, self.tcp, self._rests(),
-                              {a: self.arms[a].home for a in self.hw}, self.dt,
+            why = safety.park(self.hw, self.limits, self.bodies, self.tcp, self._rests(), self.dt,
                               opened={a: self.arms[a].hand.open for a in self.hw}, hand_speed=self.hand_speed)  # fmt: skip
             if why:
                 self._fault("park", why)

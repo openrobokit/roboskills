@@ -24,29 +24,14 @@ uv sync --locked --group dev --group yam      # i2rt (git), pyrealsense2, imagei
 ip -br link | grep can                         # can_left and can_right UP
 ```
 
-The rig lives outside the repository, one per machine: `~/.config/roboskills/<bench>.yaml` (or `$ROBOSKILLS_YAM_RIG`).
+The rig lives outside the repository, one per machine: copy [`rig.example.yaml`](rig.example.yaml) to
+`~/.config/roboskills/yam.yaml` (or point `$ROBOSKILLS_YAM_RIG` at your copy) and replace what your station measures:
+each arm's CAN channel and `T_world_base`, each camera's serial and calibrated pose (`T_world_cam` for a fixed one,
+`T_ee_cam` on its arm's flange for a wrist one), `table_z`. Each field is commented there.
 
-```yaml
-rate: 50                     # Hz: command ticks, one budget step each
-table_z: 0.0                 # world z of the table top
-workspace: {lo: [-0.1, -0.6, -0.02], hi: [0.7, 0.6, 0.7]}   # the TCP stays inside, world metres
-contact_kp: 0.3              # arm stiffness on contact waypoints
-hand_speed: 0.5              # jaw command per s (0 closed .. 1 open): it closes over 2 s, never snaps shut
-review_under: 0.025          # m: a plan whose TCP stays this near its start, jaws unchanged, runs unreviewed (0: review all)
-arms:
-  left:  {channel: can_left,  arm: yam_ultra, gripper: linear_4310, T_world_base: <4x4>, home: [6 rad], rest: [6 rad]}
-  right: {channel: can_right, arm: yam_ultra, gripper: linear_4310, T_world_base: <4x4>, home: [6 rad]}
-cameras:
-  front:       {serial: "317422075675", T_world_cam: <4x4>, depth_scale: 1.0}   # a fixed camera's calibrated pose; depth_scale (default 1) if its depth reads short
-  top:         {serial: "250222073512", T_world_cam: <4x4>}
-  wrist_left:  {serial: "218622278225", arm: left, T_ee_cam: <4x4>}   # a wrist camera's pose on its arm's flange
-  wrist_right: {serial: "130322273320", arm: right, T_ee_cam: <4x4>}
-record: [front, top]         # one video_<camera>.mp4 each (one name or a list)
-```
-
-`home` should hold the hands clear of the table and out of the fixed cameras' view of the workspace. `rest` (default
-all zeros) is where the arms go before their motors turn off. Check which D405 and which CAN channel belong to which
-arm: move one arm by hand and watch.
+Each arm's `rest` (default all zeros: folded, resting on itself) is its home and where it parks before its motors turn
+off; keep it a pose the arm holds without power. Check which D405 and which CAN channel belong to which arm: move one
+arm by hand and watch.
 
 On a new or rewired station, check once before the first run, with a hand under the arms: every RealSense streams
 colour and depth; pressing the hardware e-stop stops both arms' motor chains and releasing it lets them reconnect and
@@ -77,7 +62,7 @@ waits in the panel for your approval (Execute) before the executor reaches it, a
 queue. Reject drops that plan and everything queued after it. **Stop** ends the episode at any time, holding the arms. After the agent's last turn, give the
 verdict: Success, Failure, or Void (the episode does not count, e.g. someone bumped the scene), with a note. A verdict given while the agent is still
 working ends the episode there, as Stop does: the arms hold and the agent is told to finish. The
-arms go home, and when the run closes they fold to `rest` and their motors turn off. Keep a hand on the hardware
+arms fold to `rest`, and when the run closes their motors turn off there. Keep a hand on the hardware
 e-stop for any first run.
 
 To quit early, press **Stop** or Ctrl+C the launcher: either way the arms hold, then fold to `rest` on a checked path

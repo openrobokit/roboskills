@@ -52,6 +52,7 @@ roboskills = [
     "core/*.md", "workflows/**/*.md", "workflows/motion_gen/setup.sh", "workflows/agentic_sim/setup.sh",
     "tools/**/*.md", "tools/mujoco/mano/**/*", "tools/mujoco/franka/**/*",
     "eval/**/*.md", "eval/*/*.sh", "eval/*/pyproject.toml", "eval/*/uv.lock", "eval/robodojo/*.json",
+    "eval/yam/*.yaml",
 ]
 
 [tool.ruff]
