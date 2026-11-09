@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from roboskills.tools.robokit import state
 from roboskills.tools.robokit.geom import flat, near
 
 
@@ -31,10 +32,13 @@ def cloud(cam, edge=0.015):
 class View:
     """What one camera observation shows, both {cam: ...} over the cameras with depth: `cams` the `Camera`s (rgb,
     depth, K, OpenCV T_world_cam) and `clouds` world xyz of every pixel (H, W, 3), NaN on the robot and missing depth.
-    Robot readings come from `Tools.status`."""
+    Robot readings come from `Tools.status`; `robot` is the observation (joints, hands) the images were taken at;
+    `levelled` {camera: m its table stood off} the cameras whose clouds were moved onto the table (`state.level`)."""
 
     cams: dict
     clouds: dict
+    robot: object = None
+    levelled: dict = None
 
     @property
     def points(self):
@@ -56,4 +60,8 @@ def view(model, obs, clearance=0.012):
             flat, ok = P.reshape(-1, 3), np.flatnonzero(np.isfinite(P).all(2).ravel())
             flat[ok[near(flat[ok], robot_pts, clearance)]] = np.nan
         clouds[name] = P
-    return View({c: obs.cams[c] for c in clouds}, clouds)
+    try:  # every camera's table onto the one table: no camera's error stands up as a phantom surface
+        levelled = state.level(clouds, model.reach_heights())[1] if clouds else {}
+    except ValueError:  # too few points to find the table
+        levelled = {}
+    return View({c: obs.cams[c] for c in clouds}, clouds, obs, levelled)

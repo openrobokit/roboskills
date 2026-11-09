@@ -27,10 +27,16 @@ dev = [
     "robokit[mjwarp]>=1.0.0rc1",  # tools/robokit imports it where used, like graspkit; real2sim agents may call its SimMPC
     "warp-lang==1.18.0",  # MuJoCo Warp's; its CUDA 12 build (sources)
 ]
+yam = ["i2rt", "pyrealsense2", "imageio[ffmpeg]"]  # real YAM deployment (eval/yam): I2RT's arm SDK, not on PyPI (sources), RealSense, H.264 video
+
+[tool.uv]
+# ruckig (i2rt's) ships only an sdist, and its deprecated `cmake.targets` fails to build under scikit-build-core >= 0.10.
+build-constraint-dependencies = ["scikit-build-core<0.10"]
 
 [tool.uv.sources]
 # Warp's CUDA 12 build: PyPI's is built with CUDA 13, which needs driver 580; this one runs on CUDA 12 and 13 drivers alike.
 warp-lang = { url = "https://github.com/NVIDIA/warp/releases/download/v1.18.0/warp_lang-1.18.0+cu12-py3-none-manylinux_2_28_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }
+i2rt = { git = "https://github.com/i2rt-robotics/i2rt.git", rev = "fe78bae67334b9af0b79833dd8ba141a61767f2a" }
 
 [tool.setuptools]
 include-package-data = true
@@ -46,6 +52,7 @@ roboskills = [
     "core/*.md", "workflows/**/*.md", "workflows/motion_gen/setup.sh", "workflows/agentic_sim/setup.sh",
     "tools/**/*.md", "tools/mujoco/mano/**/*", "tools/mujoco/franka/**/*",
     "eval/**/*.md", "eval/*/*.sh", "eval/*/pyproject.toml", "eval/*/uv.lock", "eval/robodojo/*.json",
+    "eval/yam/*.yaml",
 ]
 
 [tool.ruff]

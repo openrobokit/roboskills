@@ -17,14 +17,20 @@ import numpy as np
 
 from roboskills.eval.interface import Trajectory
 from roboskills.tools.robokit.action import BACK, LIFT, LINE, SLOW, Pose
+from roboskills.tools.robokit.geom import near
 
 
 DWELL = 0.5  # s a hand command change is held still for
+LEAVE = 0.01  # m a segment that rises out of contact (a lift, a back-off) stays in contact for, from where it starts
 SIZES = (16,)  # the planner batch size: RoboKit allocates per size (0.2 GB at 16, 0.8 GB at 64, 12 GB at 1024) and solves 16 as fast as 4 (0.1 s warm), so every batch is padded to 16 and longer lists go in chunks  # fmt: skip
 HOME = "home"  # a segment goal: the arm's home joints, not a TCP pose
 VOXEL = 0.01  # m, a cell of the obstacle grid: at 2 cm a 4 cm bottle grew enough to fail half the grasps around it
 REACH = 0.9  # m the grid spans each way from the arm's model frame
 CARVE = 0.1  # m: observed points this near a hand are its own (the hand, what it holds, what it touches)
+OWN = 0.07  # m: observed points this near the robot where it stands are its own (a camera a little off its calibration
+#             leaves slivers of the arms that the robot mask misses, and cameras and cables on the arm are not in its
+#             model; the arm is there, so they are no obstacle. 3 cm left the YAM bench's folded arm in its own way)
+SKIN = 0.015  # m: observed points this near the table top are the table, which the planner has as a surface already
 
 
 def _timing(rows, vmax, ramp=0.2):
@@ -65,7 +71,9 @@ class Plan:
     end_height: Optional[float] = None
     ended: Optional[bool] = None
     stopped: Optional[bool] = None
+    refused: Optional[str] = None  # why the robot would not run a path (its safety limits); None: it ran
     done: Optional[bool] = None
+    index: Optional[int] = None  # its pose's place in the list `Tools.plan` was given
 
     def record(self, follows, ended):
         """Write what `robot.follow` returned for each trajectory run (`Follow`s, in order) and whether the episode has
@@ -73,6 +81,7 @@ class Plan:
         o = follows[-1].obs
         self.steps, self.done = sum(f.steps for f in follows), follows[-1].done
         self.stopped, self.ended = any(f.stopped for f in follows), bool(ended)
+        self.refused = next((f.refused for f in follows if getattr(f, "refused", None)), None)
         self.end_q, self.end_hand, self.end_base, self.end_height = dict(o.q), dict(o.hand), o.base, o.body
         self.ends_q = [dict(f.obs.q) for f in follows]
 
@@ -89,6 +98,7 @@ class Segment:
     before: Optional[np.ndarray] = None  # hand command set and held still DWELL s before it moves
     then: Optional[np.ndarray] = None  # hand command set (or kept) and held still DWELL s once there
     follow: bool = True  # False: planned, not run (the lift that makes a pick a pick)
+    join: bool = False  # timed as one run with the segment before it (a twist's arc: no stop between its waypoints)
 
 
 def segment_traj(p):
@@ -98,6 +108,9 @@ def segment_traj(p):
     spring button counts the next stroke only once fully back up), grasp and pinch check a lift."""
     pre = None if p.hand_pre is None else np.asarray(p.hand_pre, float)
     end = pre if p.hand is None or (pre is not None and np.array_equal(p.hand, pre)) else np.asarray(p.hand, float)
+    if p.verb == "twist":  # along the arc, straight between its waypoints, in contact, slowly unless told, as one run
+        hand, speed = None if p.hand is None else np.asarray(p.hand, float), p.speed or SLOW["twist"]
+        return [Segment(T, True, False, hand, speed, join=k > 0) for k, T in enumerate([*(p.via or []), p.tcp])]
     if p.ee_pre is not None:
         out = [Segment(p.ee_pre, False, True, pre), Segment(p.tcp, True, False, pre, SLOW.get(p.verb, 1.0))]
     else:
@@ -243,13 +256,23 @@ class Planner:
         still = lambda u: paths.append(Trajectory(t=t_still, q={}, hand={a: np.repeat(u[None], len(t_still), 0)}, T={}))
         if segments[0].before is not None:
             still(segments[0].before)
+        run = None  # the frame a joined run of segments started at
         for j, s in enumerate(segments):
             if not s.follow:
                 break
-            t, Q = _rows(q[wi[j] : wi[j + 1] + 1][:, i.idx].astype(float), arm.vmax * s.speed)
+            if s.join and run is not None:
+                paths.pop()  # retimed whole with this segment: one ramp up and one down for the run
+            else:
+                run = wi[j]
+            t, Q = _rows(q[run : wi[j + 1] + 1][:, i.idx].astype(float), arm.vmax * s.speed)
             full = m.set_arm(a, np.repeat(q[:1], len(Q), 0), Q)
             hand = {} if s.hand is None else {a: np.repeat(s.hand[None], len(t), 0)}
-            path = Trajectory(t=t, q={a: Q}, hand=hand, T={a: m.tcp(a, full) @ T_tcp_ee})
+            tcp, contact = m.tcp(a, full), np.full(len(t), not s.check)
+            if not s.check and tcp[-1, 2, 3] > tcp[0, 2, 3] + LEAVE:  # rising out of contact: only its first LEAVE m
+                contact = (
+                    tcp[:, 2, 3] - tcp[0, 2, 3] <= LEAVE
+                )  # (a robot runs contact compliant: holding a load, it sags)
+            path = Trajectory(t=t, q={a: Q}, hand=hand, T={a: tcp @ T_tcp_ee}, contact=contact)
             prev = segments[j - 1] if j else None
             if (
                 prev is not None
@@ -260,7 +283,8 @@ class Planner:
             ):
                 last = paths.pop()
                 path = Trajectory(t=np.r_[last.t, last.t[-1] + t], q={a: np.r_[last.q[a], Q]}, T={a: np.r_[last.T[a], path.T[a]]},
-                                  hand={k: np.r_[last.hand[k], v] for k, v in hand.items()})  # fmt: skip
+                                  hand={k: np.r_[last.hand[k], v] for k, v in hand.items()},
+                                  contact=np.r_[last.contact, path.contact])  # fmt: skip
             paths.append(path)
             here = full[-1]
             if s.then is not None:
@@ -269,7 +293,8 @@ class Planner:
 
     def _obstacles(self, a, volume, table, scene, robot_now):
         """Rewrite arm `a`'s obstacle grid `volume`, in its model's frame: the observed world points `scene` ((N, 3),
-        NaN where the robot or no depth is; None: none) less those within CARVE of either hand, and the table top `table`
+        NaN where the robot or no depth is; None: none) less those within CARVE of either hand, OWN of the robot where it
+        stands and SKIN of the table top, and the table top `table`
         (z, footprint hull equations) over its footprint, VOXEL apart, seen by the cameras or not (no footprint: none)."""
         m, T = self.model, self.model.info[a].M.root.T_world_base
         P = np.zeros((0, 3)) if scene is None else np.asarray(scene, float).reshape(-1, 3)
@@ -278,6 +303,14 @@ class Planner:
         # out of `scene`); upgrade when RoboKit attaches a load to the robot model
         for b in m.robot.arms:
             P = P[np.linalg.norm(P - m.tcp(b, m.fq(b, robot_now))[:3, 3], axis=1) > CARVE]
+        own = m.robot_points(robot_now)
+        if len(P) and len(own):
+            P = P[~near(P, own, OWN)]
+        if table is not None:  # on the table top (over its footprint, when it has one): the table, already a surface
+            top = np.abs(P[:, 2] - table[0]) <= SKIN
+            if table[1] is not None:
+                top &= (P[:, :2] @ table[1][:, :2].T + table[1][:, 2] <= 0).all(1)
+            P = P[~top]
         if table is not None and table[1] is not None:
             g = np.arange(-np.sqrt(2) * REACH, np.sqrt(2) * REACH + VOXEL, VOXEL)  # the grid's footprint, turned or not
             xy = np.stack(np.meshgrid(g, g), -1).reshape(-1, 2) + T[:2, 3]

@@ -18,24 +18,78 @@ import numpy as np
 from roboskills.tools.robokit.geom import voxel_ids
 
 
-def write_collision_spheres(rk, path, spacing=0.035):
-    """Conservative collision spheres for a model without a sphere file, written to `path` (the YAML RoboKit loads as
-    `collision_spheres_path`): each link's collision-mesh bounding box, cut along its longest axis into cells at most
-    `spacing` long, one circumscribing sphere each."""
+def fit_spheres(mesh, slack=0.02, samples=3000, cap=None):
+    """Spheres (centres (K, 3), radii (K,)) covering `mesh` (a trimesh, its link's frame) that reach about `slack` m
+    past it at most: candidate centres inside the mesh (its filled voxels, `slack` / 2 apart) and on its surface, each
+    with its distance to the surface plus `slack` as its radius, taken greedily until every surface sample is inside
+    one. A thick part gets a few large spheres and a thin plate many small ones; a mesh that is not closed gets only
+    surface-centred spheres of radius `slack`. With `cap`, at most `cap` spheres: the samples still uncovered then
+    grow their nearest sphere until it reaches them."""
+    import trimesh
+    from scipy.spatial import cKDTree
+
+    rng = np.random.default_rng(0)
+    S = trimesh.sample.sample_surface_even(mesh, samples, seed=0)[0]
+    V = np.asarray(mesh.vertices)
+    S = np.vstack([S, V[rng.choice(len(V), min(len(V), samples // 3), replace=False)]])
+    inner = np.zeros((0, 3))
+    if mesh.is_watertight:
+        inner = mesh.voxelized(max(slack / 2, 0.002)).fill().points
+        inner = inner[mesh.contains(inner)]  # a fill also closes concave pockets
+    tree = cKDTree(S)
+    cand = np.vstack([inner, S])
+    radii = tree.query(cand)[0] + slack
+    covers = tree.query_ball_point(cand, radii)
+    left, C, R = np.ones(len(S), bool), [], []
+    while left.any() and len(C) < (cap or len(cand)):
+        k = int(np.argmax([left[c].sum() for c in covers]))
+        C.append(cand[k])
+        R.append(radii[k])
+        left[covers[k]] = False
+    C, R = np.array(C), np.array(R)
+    if left.any():
+        d, i = cKDTree(C).query(S[left])
+        np.maximum.at(R, i, d)
+    return C, R
+
+
+def write_collision_spheres(rk, path, slack=0.02, visual=(), budget=16, spacing=0.035):
+    """Collision spheres for a model without a sphere file, written to `path` (the YAML RoboKit loads as
+    `collision_spheres_path`): `fit_spheres` on each link's collision mesh, or for the links in `visual` that have
+    none, on its visual mesh (a hand's palm whose geom is set not to collide is still there). A link that needs more
+    than `budget` spheres (a mesh that is not closed, a large thin part) is fitted again with 1.5 times the slack,
+    up to 5 cm, where it is capped at `budget`: planning time grows with the sphere count. A link no joint moves
+    (a pedestal, a controller box, a mobile base) keeps one circumscribing sphere per slice of its bounding box,
+    `spacing` long (at most `budget` of them): fitting a robosuite pedestal took 2.5 minutes for nothing that moves.
+    The bounding boxes the moving links had before reached up to 6 cm past a YAM fingertip: the planner then kept the
+    TCP 2.5-3 cm over the table and no grasp reached a 2 cm object."""
     import yaml
 
+    pj, moving = rk.spec.link_parent_joint_indices, set(rk.spec.nonfixed_joint_names)
+    moves = np.array([j >= 0 and rk.spec.joint_names[j] in moving for j in pj])
+    moves |= (np.asarray(rk.spec.link_ancestor_links_mask, bool) & moves[None]).any(1)  # or an ancestor link moves
     spheres = {}
-    for name, scene in rk.spec.link_collision_geometries.items():
-        if not scene.geometry:
+    for k, name in enumerate(rk.link_names):
+        scene = rk.spec.link_collision_geometries.get(name)
+        if (scene is None or not scene.geometry) and name in visual:
+            scene = rk.spec.link_visual_geometries.get(name)
+        if scene is None or not scene.geometry:
             continue
-        low, high = scene.to_mesh().bounds
-        axis = int(np.argmax(high - low))
-        count = max(1, int(np.ceil((high[axis] - low[axis]) / spacing)))
-        width = (high[axis] - low[axis]) / count
-        radius = max(float(np.sqrt(np.sum(np.delete(high - low, axis) ** 2) + width**2) / 2), 0.001)
-        centers = np.repeat((low + high)[None] / 2, count, 0)
-        centers[:, axis] = low[axis] + (np.arange(count) + 0.5) * width
-        spheres[name] = [{"center": c.tolist(), "radius": radius} for c in centers]
+        mesh, s = scene.to_mesh(), slack
+        if not moves[k]:
+            low, high = mesh.bounds
+            axis = int(np.argmax(high - low))
+            count = int(np.clip(np.ceil((high[axis] - low[axis]) / spacing), 1, budget))
+            width = (high[axis] - low[axis]) / count
+            C = np.repeat((low + high)[None] / 2, count, 0)
+            C[:, axis] = low[axis] + (np.arange(count) + 0.5) * width
+            R = np.full(count, max(float(np.sqrt(np.sum(np.delete(high - low, axis) ** 2) + width**2) / 2), 0.001))
+        else:
+            C, R = fit_spheres(mesh, s, cap=budget if s >= 0.05 else None)
+            while len(R) > budget:
+                s = min(s * 1.5, 0.05)
+                C, R = fit_spheres(mesh, s, cap=budget if s >= 0.05 else None)
+        spheres[name] = [{"center": c.tolist(), "radius": float(r)} for c, r in zip(C, R)]
     Path(path).write_text(yaml.safe_dump({"collision_spheres": spheres}))
     return Path(path)
 
@@ -56,7 +110,9 @@ class RobotModel:
             )
             if key not in models:
                 with tempfile.TemporaryDirectory(prefix="sk_robot_") as d:  # for spheres generated from the meshes
-                    sph = arm.collision_spheres or write_collision_spheres(RK.load(desc, load_meshes=True), Path(d) / "spheres.yml")  # fmt: skip
+                    sph = arm.collision_spheres or self._spheres(
+                        key[0], RK.load(desc, load_meshes=True), arm.ee_link, Path(d)
+                    )
                     m = RK.load(desc, load_meshes=True, load_collision_spheres=True, collision_spheres_path=str(sph))
                 models[key] = SimpleNamespace(rk=m, names=list(m.spec.actuated_joint_names), root=arm, desc=desc)
             M, ee = models[key], models[key].rk.link_names.index(arm.ee_link)
@@ -64,6 +120,25 @@ class RobotModel:
             self.info[a] = SimpleNamespace(M=M, idx=[M.names.index(j) for j in arm.joints], ee=ee,
                                            hidx=[M.names.index(j) for j in arm.hand.joints],
                                            hand_links=np.flatnonzero(below | (np.arange(len(below)) == ee)))  # fmt: skip
+
+    _sphere_yaml = {}  # generated sphere files by description, for every RobotModel of the process (a fit takes seconds)
+
+    @staticmethod
+    def _spheres(key, rk, ee_link, d):
+        """A sphere file in directory `d` for description `key` (loaded as `rk`) that has none: `write_collision_spheres`,
+        its hand (`ee_link` and the links hanging off it) fitted on visual meshes where it has no collision mesh. Kept
+        for a description given as a path only (an in-memory one's id may be reused)."""
+        key = (key, ee_link) if isinstance(key, (str, Path)) else None
+        if key is None or key not in RobotModel._sphere_yaml:
+            ee = rk.link_names.index(ee_link)
+            below = np.asarray(rk.spec.link_ancestor_links_mask, bool)[:, ee]
+            hand = [n for k, n in enumerate(rk.link_names) if below[k] or k == ee]
+            text = write_collision_spheres(rk, d / "spheres.yml", visual=hand).read_text()
+            if key is None:
+                return d / "spheres.yml"
+            RobotModel._sphere_yaml[key] = text
+        (d / "spheres.yml").write_text(RobotModel._sphere_yaml[key])
+        return d / "spheres.yml"
 
     def fq(self, a, obs=None):
         """Arm `a`'s model's full joint vector from an observation (now)."""

@@ -99,6 +99,40 @@ def table_height(clouds, band=None, min_area=0.25, cell=0.02):
     return float(np.median(z[best[1]]))
 
 
+LEVEL = 0.015  # m a camera's view of the table may stand off the table before its points are levelled onto it
+
+
+def level(clouds, band=None, search=0.06):
+    """Bring every camera's view of the table onto the table: a camera a little off its calibration (or its mount)
+    sees the table a few cm high or tilted, a phantom surface the hand cannot pass. The table is `table_height` (the
+    largest level, which the cameras that agree make); each camera's own table, its densest up-facing level within
+    `search` m of it, is fitted as a plane, and where that plane stands more than LEVEL off the table, the camera's
+    cloud (H, W, 3, corrected in place) is moved by the difference at every pixel. Returns (table_z, {camera: m its
+    table stood off, median}) for the cameras it moved."""
+    tz, moved = table_height(clouds, band), {}
+    for c, C in clouds.items():
+        up = facing_up(C) & np.isfinite(C).all(2) & (np.abs(C[..., 2] - tz) < search)
+        P = C[up]
+        if len(P) < 300:
+            continue
+        edges = np.arange(P[:, 2].min(), P[:, 2].max() + 0.004, 0.002)
+        z0 = edges[np.histogram(P[:, 2], bins=edges)[0].argmax()] + 0.001
+        Q = P[np.abs(P[:, 2] - z0) < 0.01]
+        for _ in range(3):  # a plane through its table, refitted on the points near it
+            coef = np.linalg.lstsq(np.c_[Q[:, :2], np.ones(len(Q))], Q[:, 2], rcond=None)[0]
+            Q = P[np.abs(P[:, 2] - P[:, :2] @ coef[:2] - coef[2]) < 0.008]
+            if len(Q) < 300:
+                break
+        if len(Q) < 300:
+            continue
+        off = Q[:, :2] @ coef[:2] + coef[2] - tz
+        if np.abs(off).max() <= LEVEL:
+            continue
+        C[..., 2] -= C[..., :2] @ coef[:2] + coef[2] - tz
+        moved[c] = round(float(np.median(off)), 3)
+    return tz, moved
+
+
 def merge(dets, overlap=0.3, radius=0.012):
     """Group per-camera detections [(label, score, points, cam)] of one object: same label, other camera, and at
     least `overlap` of the smaller cloud within `radius` of the larger. Returns lists of indices."""

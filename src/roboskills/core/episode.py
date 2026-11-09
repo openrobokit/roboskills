@@ -76,8 +76,16 @@ class Episode:
     def __init__(self, tools):
         self.tools, self.out, self.result = tools, tools.out, None
 
+    @property
+    def gone(self):
+        """Why the robot can no longer be reached (its server died or closed the link), else None."""
+        return getattr(self.tools.robot, "lost", None)
+
     def finish(self):
-        """End and score the episode, at the end; calling it again changes nothing."""
+        """End and score the episode, at the end; calling it again changes nothing. A robot that is gone cannot score
+        it: the episode is void."""
+        if self.result is None and self.gone:
+            self.result = dict(success=False, void=f"the robot is gone ({self.gone}); see {self.out}/server/sim.log")
         if self.result is None:  # robot.finish is called once: a second one would score and save the episode again
             self.result = self.tools.robot.finish(self.out)
         return "episode finished"  # the score stays with the launcher, not the model

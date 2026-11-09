@@ -19,11 +19,13 @@ points, ...}}}} and `held` {{arm: id}} in the namespace and update them after ev
   Match a new observation's detections to your `objects` yourself: same label, nearest centre first, within 6 cm.
 - Check: `bot.carried(...)` (did a lift take it along), `bot.register(shape, observed)` (a rigid fit: where a held
   object really sits).
-- Act: `bot.heuristic_grasp(arm, tcp, hand)` (your grasp) and `bot.place_pose(...)` give `Pose`s; you build the rest (below). `p = bot.plan(poses,
+- Act: `bot.grasp_poses(arm, points, table_z, scene=view.points)` (a learned policy's grasps, best first, when the
+  API above lists it as available in this run: plan these first), `bot.heuristic_grasp(arm, tcp, hand)` (your grasp)
+  and `bot.place_pose(...)` give `Pose`s; you build the rest (below). `p = bot.plan(poses,
   table=table, scene=points)` -> the first reachable Pose as a Plan, kept clear of the table and of `scene` (observed
   points, e.g. view.points; leave out what a hand holds: points within 0.1 m of a hand count as its own), or None (nothing moves:
-  ask it before carrying something somewhere). `r = bot.execute(p)` moves the robot: {{steps, ended, stopped, q, hand,
-  tcp, tcp_error_m, tcp_error_deg, short}}. A plan runs once and only from where it was planned: plan again after
+  ask it before carrying something somewhere). `r = bot.execute(p)` moves the robot: {{steps, ended, stopped, refused, q,
+  hand, tcp, tcp_error_m, tcp_error_deg, short}} (refused: why the robot would not run it; nothing moved). A plan runs once and only from where it was planned: plan again after
   any motion. `bot.status()`: steps, step_limit, instruction, ended, q, hand, tcp {{arm: 4x4}}, base, body.
 - Is a jaw holding something? With `h = bot.model.robot.arms[arm].hand` and `u = bot.status()["hand"][arm][0]` after
   commanding it closed: `h.closed[0] + 0.03 < u < h.open[0] - 0.05` holds something; `u` at h.closed[0] closed on
@@ -120,6 +122,9 @@ Rules:
   P.min(0) - 0.03, P.max(0) + 0.03; R, t, q = bot.register(P, S[((S > lo) & (S < hi)).all(1) & (S[:, 2] > tz +
   0.005)])` (on q["accepted"], T_tcp_obj = inv(T_tcp) @ [R t] @ T_tcp @ T_tcp_obj and its points move by R, t). Then place_pose, which controls the object, not the TCP: it lowers it gently, opens the
   hand and backs off above it.
+- To search many candidate poses (tilts, spins, heights, arms), build them all and pass them to one
+  `bot.reach(poses, table=..., scene=...)`, which returns the reachable ones' indices; never call `bot.plan` once per
+  pose in a loop (each call costs a whole GPU batch, 16 poses' work for one).
 - A plan can run short (an arm stopped on contact or blocked): check tcp_error_m before the next dependent action.
 - Home each arm with its own home pose when they should both go.
 - Once status shows ended, nothing moves: call finish().

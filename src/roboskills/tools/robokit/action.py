@@ -20,7 +20,7 @@ class Pose:
     """One target of one verb, world frame. Lists of them are best first."""
 
     verb: str
-    """The verb that made it: grasp, pinch, press, place, move, lift, release, home, drive or posture."""
+    """The verb that made it: grasp, pinch, press, place, move, lift, release, twist, home, drive or posture."""
     arm: str | None
     """The hand it moves; None for drive and posture."""
     obj: str | None = None
@@ -39,6 +39,10 @@ class Pose:
     """The pelvis height target above the floor, m, posture only."""
     rank: int | str = 0
     """Where it came from: the backend's order (0 best), "contact", "spin<deg>", "place", ..."""
+    via: list | None = None
+    """(4, 4) TCP poses passed on the way to `tcp`, in order (a twist's arc); None: none."""
+    speed: float | None = None
+    """Speed scale of a twist's arc (1.0: a move's); None: SLOW["twist"]."""
 
 
 PRE_GRASP = 0.08  # pre-grasp stand-off along -approach, m: where every grasp is approached from
@@ -78,6 +82,14 @@ def _approach_cone(spec, toward=None):
     return d / np.linalg.norm(d), 50.0
 
 
+def grasp_backend():
+    """The learned grasp backend this process runs, as its settings: the $GRASP_* environment ({"GRASP_BACKEND":
+    module, ...}), or None without a $GRASP_BACKEND."""
+    if not os.environ.get("GRASP_BACKEND"):
+        return None
+    return {k: v for k, v in sorted(os.environ.items()) if k.startswith("GRASP_")}
+
+
 def grasp_poses(model, arm, P, scene, table_z, approach=None, avoid=None, variant=0, out=None, tries=8):
     """The grasps for `arm` (a `RobotModel`'s) to try on object points P (N, 3), best first: the backend's best `tries`
     in its order, clear of the rest of the observed `scene` points (M, 3; None: none) and of `avoid` (K, 3; kept clear
@@ -94,8 +106,9 @@ def grasp_poses(model, arm, P, scene, table_z, approach=None, avoid=None, varian
     avoid = np.zeros((0, 3)) if avoid is None else np.asarray(avoid, float).reshape(-1, 3)
     obstacles = scene[~near(scene, P, 0.015) & (scene[:, 2] > table_z + 0.008)] if len(scene) else scene
     axis, cone = _approach_cone(approach, P.mean(0) - model.info[arm].M.root.T_world_base[:3, 3])
-    if not (name := os.environ.get("GRASP_BACKEND")):
+    if (backend := grasp_backend()) is None:
         raise ValueError("no grasp backend here: build the grasp yourself with heuristic_grasp(arm, tcp, hand)")
+    name = backend["GRASP_BACKEND"]
     S = SimpleNamespace(robot=model.robot, kin=model, out=out)
     backend = importlib.import_module(name).candidates(S, arm, P, table_z, obstacles, None, avoid, axis, cone, variant)
     cands = list(backend)[:tries]
@@ -149,9 +162,34 @@ def place_pose(model, arm, T_tcp, T_tcp_obj, P, pos, yaw=None, hover=0.04, table
                 hand=np.asarray(hand.open, float), rank="place")  # fmt: skip
 
 
+# ---- twist: what a hand holds turned about an axis
+
+
+TWIST_STEP = 10.0  # deg between a twist's arc waypoints (each solved onto the arc, joined by a short straight line)
+
+
+def twist_pose(T_tcp, axis, point, deg, arm, hand=None, speed=None):
+    """One `Pose` turning the TCP (now at `T_tcp`, 4 x 4) `deg` degrees about the world `axis` through `point` (a
+    lid's axis through its centre; right-handed: positive turns counterclockwise looking down -axis), on the arc: a
+    waypoint every TWIST_STEP deg, the hand at `hand` (None: as it is), in contact throughout, at `speed` (None:
+    slowly, SLOW["twist"], for a lid; up to 1.0, a move's, for a tilt such as a pour)."""
+    k = np.asarray(axis, float) / np.linalg.norm(axis)
+    K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    T0, c, n = np.asarray(T_tcp, float), np.asarray(point, float), max(1, int(np.ceil(abs(deg) / TWIST_STEP)))
+    arc = []
+    for a in np.radians(deg) * np.arange(1, n + 1) / n:
+        R = np.eye(3) + np.sin(a) * K + (1 - np.cos(a)) * K @ K
+        T = np.eye(4)
+        T[:3, :3], T[:3, 3] = R @ T0[:3, :3], c + R @ (T0[:3, 3] - c)
+        arc.append(T)
+    return Pose("twist", arm, tcp=arc[-1], via=arc[:-1], hand=None if hand is None else np.asarray(hand, float),
+                rank="twist", speed=speed)  # fmt: skip
+
+
 # ---- the verb tables: the planner moves each verb by its name
 
 LINE = ("lift", "release")  # verbs whose motion is a short straight joint line, not collision-checked (it starts in contact)  # fmt: skip
 LIFT = dict(grasp=0.1, pinch=0.1)  # m a pick must also lift straight up from its closure (planned, not followed)
 BACK = ("press", "place")  # verbs whose hand comes straight back up to the pre-pose once it has pressed or let go
-SLOW = dict(place=0.3)  # speed scale of the straight leg into contact (a placement sets its object down gently)
+SLOW = dict(place=0.3, twist=0.2)  # speed scale of the straight leg into contact: a placement sets its object down
+#                                    gently; a twist turns what it holds, all of it in contact

@@ -132,12 +132,15 @@ def sandbox(image):
 
 class Server:
     def __init__(self, runtime, image, gpu, *, name=None, env=None, mounts=(), scratch=(), home=False, workdir=None,
-                 root=False, docker_args=""):  # fmt: skip
+                 root=False, docker_args="", stop_s=30.0):  # fmt: skip
         """`image`: the docker image (Apptainer: its sandbox, or a sandbox directory); `env`: the simulator's environment
         (natively, on top of this process's); `mounts`: (source, dest, "ro"|"rw");
         `scratch`: container paths given a private writable directory (Apptainer); `home`: a home of its own too
-        (Apptainer: True, a private one; a path, that directory); `workdir`: where it runs; `root`: as root (Docker)."""
+        (Apptainer: True, a private one; a path, that directory); `workdir`: where it runs; `root`: as root (Docker);
+        `stop_s`: how long `close` waits after SIGTERM before SIGKILL (None: until it exits, for hardware that must
+        park first)."""
         self.runtime, self.gpu, self.proc, self.container, self.workdir = runtime, str(gpu), None, None, workdir
+        self.stop_s = stop_s
         atexit.register(self.close)  # an exiting host leaves no container or scratch behind (a killed one may)
         self.name = name or f"sk-{os.getuid()}-{secrets.token_hex(4)}"
         self.scratch = Path(tempfile.gettempdir()) / f"sk-{os.getuid()}" / self.name
@@ -227,7 +230,7 @@ class Server:
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGTERM)
             with contextlib.suppress(subprocess.TimeoutExpired):
-                proc.wait(timeout=30)
+                proc.wait(timeout=self.stop_s)
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
